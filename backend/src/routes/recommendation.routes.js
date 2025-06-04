@@ -1,5 +1,8 @@
 const router = require('express').Router();
+const axios = require('axios');
 const User = require('../models/User');
+const Song = require('../models/Song');
+const UserInteraction = require('../models/UserInteraction');
 
 // Mood-based track features mapping
 const moodFeatures = {
@@ -35,86 +38,86 @@ const moodFeatures = {
   }
 };
 
-// Get recommendations based on user mood and preferences
+// Get personalized recommendations
 router.post('/', async (req, res) => {
   try {
-    const { mood, themeColor } = req.body;
-    const userId = req.user.id;
+    const { mood } = req.body;
+    const user = await User.findById(req.user.id);
 
-    // Get user preferences
-    const user = await User.findById(userId);
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    // Get mood features
-    const features = moodFeatures[mood || user.preferences.mood];
-    if (!features) {
-      return res.status(400).json({ message: 'Invalid mood' });
-    }
+    // Get user's play history and preferences
+    const playHistory = await UserInteraction.find({
+      user: user._id,
+      action: 'play'
+    }).sort('-timestamp').limit(50);
 
-    // TODO: Implement actual recommendation logic using ML model
-    // For now, return mock recommendations based on mood
-    const mockRecommendations = generateMockRecommendations(features, user.preferences);
-
-    res.json({
-      recommendations: mockRecommendations,
-      mood: mood || user.preferences.mood,
-      features
+    const likedSongs = await UserInteraction.find({
+      user: user._id,
+      action: 'like'
     });
+
+    // Call ML service for recommendations
+    const response = await axios.post(process.env.ML_SERVICE_URL + '/ml/recommend', {
+      userId: user._id,
+      mood: mood || user.preferences.mood,
+      genres: user.preferences.genres,
+      playHistory: playHistory.map(h => h.song),
+      likedSongs: likedSongs.map(l => l.song)
+    });
+
+    // Get full song details
+    const recommendations = await Song.find({
+      _id: { $in: response.data.recommendations }
+    });
+
+    res.json(recommendations);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 });
 
-// Helper function to generate mock recommendations
-function generateMockRecommendations(features, preferences) {
-  // This is a placeholder function that would be replaced with actual ML-based recommendations
-  const mockTracks = [
-    {
-      id: '1',
-      title: 'Neon Dreams',
-      artist: 'CyberWave',
-      mood: 'chill',
-      features: {
-        tempo: 85,
-        energy: 0.4,
-        valence: 0.6
+// Get trending songs
+router.get('/trending', async (req, res) => {
+  try {
+    const trending = await UserInteraction.aggregate([
+      {
+        $match: {
+          action: 'play',
+          timestamp: {
+            $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) // Last 24 hours
+          }
+        }
+      },
+      {
+        $group: {
+          _id: '$song',
+          playCount: { $sum: 1 }
+        }
+      },
+      {
+        $sort: { playCount: -1 }
+      },
+      {
+        $limit: 20
       }
-    },
-    {
-      id: '2',
-      title: 'Digital Sunset',
-      artist: 'SynthMaster',
-      mood: 'romantic',
-      features: {
-        tempo: 95,
-        energy: 0.5,
-        valence: 0.7
-      }
-    },
-    {
-      id: '3',
-      title: 'Dark Circuit',
-      artist: 'ByteRunner',
-      mood: 'dark',
-      features: {
-        tempo: 110,
-        energy: 0.6,
-        valence: 0.3
-      }
-    }
-  ];
+    ]);
 
-  // Filter tracks based on mood features
-  return mockTracks.filter(track => {
-    return track.features.tempo >= features.tempo.min &&
-           track.features.tempo <= features.tempo.max &&
-           track.features.energy >= features.energy.min &&
-           track.features.energy <= features.energy.max &&
-           track.features.valence >= features.valence.min &&
-           track.features.valence <= features.valence.max;
-  });
-}
+    const songIds = trending.map(t => t._id);
+    const songs = await Song.find({ _id: { $in: songIds } });
+
+    // Combine play counts with song details
+    const trendingSongs = songs.map(song => ({
+      ...song.toObject(),
+      playCount: trending.find(t => t._id.equals(song._id)).playCount
+    }));
+
+    res.json(trendingSongs);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
 
 module.exports = router; 

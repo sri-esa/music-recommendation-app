@@ -40,15 +40,15 @@ const userSchema = new mongoose.Schema({
     }
   }],
   preferences: {
+    genres: [{
+      type: String,
+      trim: true
+    }],
     mood: {
       type: String,
       enum: ['chill', 'energetic', 'sad', 'romantic', 'dark', 'lofi'],
       default: 'chill'
     },
-    genres: [{
-      type: String,
-      trim: true
-    }],
     favoriteArtists: [{
       type: String,
       trim: true
@@ -63,6 +63,28 @@ const userSchema = new mongoose.Schema({
       type: String,
       default: 'neon_wave'
     }
+  },
+  themeColor: {
+    type: String,
+    default: '#000000'
+  },
+  playHistory: [{
+    song: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Song'
+    },
+    timestamp: {
+      type: Date,
+      default: Date.now
+    }
+  }],
+  likedSongs: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Song'
+  }],
+  isAdmin: {
+    type: Boolean,
+    default: false
   },
   createdAt: {
     type: Date,
@@ -87,6 +109,9 @@ userSchema.pre('save', async function(next) {
 userSchema.methods.comparePassword = async function(candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
 };
+
+// Index for email and username searches
+userSchema.index({ email: 1, username: 1 });
 
 const User = mongoose.model('User', userSchema);
 

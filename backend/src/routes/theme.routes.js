@@ -90,4 +90,44 @@ router.get('/:userId', async (req, res) => {
   }
 });
 
+// Set theme color
+router.post('/set', async (req, res) => {
+  try {
+    const { color } = req.body;
+    const user = await User.findById(req.user.id);
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    user.themeColor = color;
+    await user.save();
+
+    // Emit theme change event via WebSocket
+    req.app.get('io').emit('themeUpdate', {
+      userId: user._id,
+      color: color
+    });
+
+    res.json({ themeColor: color });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// Get user's theme color
+router.get('/:userId', async (req, res) => {
+  try {
+    const user = await User.findById(req.params.userId);
+    
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    res.json({ themeColor: user.themeColor });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
 module.exports = router; 

@@ -1,22 +1,61 @@
 const router = require('express').Router();
 const User = require('../models/User');
+const Song = require('../models/Song');
 
-// Search tracks and artists
+// Search songs, artists, and genres
 router.get('/', async (req, res) => {
   try {
-    const { q } = req.query;
+    const { q, type } = req.query;
+    
     if (!q) {
       return res.status(400).json({ message: 'Search query is required' });
     }
 
-    // TODO: Implement actual search logic with database
-    // For now, return mock search results
-    const mockResults = generateMockSearchResults(q);
+    let query = {};
+    
+    // Build search query based on type
+    switch (type) {
+      case 'artist':
+        query = { artist: { $regex: q, $options: 'i' } };
+        break;
+      case 'genre':
+        query = { genre: { $regex: q, $options: 'i' } };
+        break;
+      case 'mood':
+        query = { mood: { $regex: q, $options: 'i' } };
+        break;
+      default:
+        // Search across all fields
+        query = {
+          $or: [
+            { title: { $regex: q, $options: 'i' } },
+            { artist: { $regex: q, $options: 'i' } },
+            { genre: { $regex: q, $options: 'i' } },
+            { mood: { $regex: q, $options: 'i' } }
+          ]
+        };
+    }
 
-    res.json({
-      results: mockResults,
-      query: q
-    });
+    const songs = await Song.find(query)
+      .limit(20)
+      .select('title artist album genre mood audioFeatures coverImage');
+
+    res.json(songs);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// Get detailed song information
+router.get('/song/:id', async (req, res) => {
+  try {
+    const song = await Song.findById(req.params.id);
+    
+    if (!song) {
+      return res.status(404).json({ message: 'Song not found' });
+    }
+
+    res.json(song);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

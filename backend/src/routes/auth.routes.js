@@ -1,30 +1,41 @@
 const router = require('express').Router();
+const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const { authenticateToken } = require('../middleware/auth');
 
 // Register new user
 router.post('/register', async (req, res) => {
   try {
-    const { username, email, password } = req.body;
+    const { email, password, username } = req.body;
 
     // Check if user already exists
-    const userExists = await User.findOne({ $or: [{ email }, { username }] });
-    if (userExists) {
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
       return res.status(400).json({ message: 'User already exists' });
     }
 
+    // Hash password
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
     // Create new user
     const user = new User({
-      username,
       email,
-      password
+      username,
+      password: hashedPassword,
+      preferences: {
+        genres: [],
+        mood: 'chill'
+      },
+      themeColor: '#000000'
     });
 
     await user.save();
 
-    // Generate token
+    // Create JWT token
     const token = jwt.sign(
-      { id: user._id, username: user.username },
+      { id: user._id },
       process.env.JWT_SECRET,
       { expiresIn: '24h' }
     );
@@ -33,10 +44,10 @@ router.post('/register', async (req, res) => {
       token,
       user: {
         id: user._id,
-        username: user.username,
         email: user.email,
+        username: user.username,
         preferences: user.preferences,
-        theme: user.theme
+        themeColor: user.themeColor
       }
     });
   } catch (err) {
@@ -49,21 +60,21 @@ router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // Check if user exists
+    // Find user
     const user = await User.findOne({ email });
     if (!user) {
-      return res.status(400).json({ message: 'Invalid credentials' });
+      return res.status(401).json({ message: 'Invalid credentials' });
     }
 
-    // Check password
-    const isMatch = await user.comparePassword(password);
-    if (!isMatch) {
-      return res.status(400).json({ message: 'Invalid credentials' });
+    // Verify password
+    const validPassword = await bcrypt.compare(password, user.password);
+    if (!validPassword) {
+      return res.status(401).json({ message: 'Invalid credentials' });
     }
 
-    // Generate token
+    // Create JWT token
     const token = jwt.sign(
-      { id: user._id, username: user.username },
+      { id: user._id },
       process.env.JWT_SECRET,
       { expiresIn: '24h' }
     );
@@ -72,10 +83,10 @@ router.post('/login', async (req, res) => {
       token,
       user: {
         id: user._id,
-        username: user.username,
         email: user.email,
+        username: user.username,
         preferences: user.preferences,
-        theme: user.theme
+        themeColor: user.themeColor
       }
     });
   } catch (err) {
@@ -83,10 +94,33 @@ router.post('/login', async (req, res) => {
   }
 });
 
-// Get current user
-router.get('/me', async (req, res) => {
+// Get user profile
+router.get('/profile', authenticateToken, async (req, res) => {
   try {
     const user = await User.findById(req.user.id).select('-password');
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    res.json(user);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// Update user profile
+router.put('/profile', authenticateToken, async (req, res) => {
+  try {
+    const { username, preferences } = req.body;
+    const user = await User.findById(req.user.id);
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    if (username) user.username = username;
+    if (preferences) user.preferences = preferences;
+
+    await user.save();
     res.json(user);
   } catch (err) {
     res.status(500).json({ message: err.message });
