@@ -10,7 +10,10 @@ export const spotifyConfig = {
     'user-library-read', // For /me/tracks (liked songs)
     'playlist-read-private',
     'playlist-read-collaborative',
-    // Add other scopes as needed, e.g., for playback control
-    // 'streaming', 'user-modify-playback-state'
+    // New scopes for Web Playback SDK
+    'streaming',
+    'user-modify-playback-state',
+    'user-read-playback-state',
+    'user-read-currently-playing',
   ],
 };
